@@ -281,6 +281,7 @@ async function simulate(event) {
 
   try {
     latestResult = await runWorker(readParameters());
+    document.querySelector("#seed").value = latestResult.parameters.seed;
     draw(latestResult);
     showSummary(latestResult);
     status.textContent = "Complete";
@@ -475,4 +476,3 @@ document.querySelectorAll(`input[type="checkbox"]`).forEach((checkbox) => {
 
 updateVisibility();
 updateEnabled();
-//document.getElementById(`process-type`).dispatchEvent(new Event(`change`));
