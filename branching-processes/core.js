@@ -126,8 +126,6 @@ export function simulateBranchingProcess(payload) {
 
   const steps = Math.floor(duration / dt);
 
-  const branchProbability = 1 - Math.exp(-branchingRate * dt);
-
   const particles = [];
   let activeIds = [];
 
@@ -177,7 +175,7 @@ export function simulateBranchingProcess(payload) {
 
       const shouldBranch =
         (activeCount < maxParticles || maxParticles == 0) &&
-        uniformRandom() < branchProbability;
+        parent.branchTime < time;
 
       if (!shouldBranch) {
         nextActive.push(particleId);
