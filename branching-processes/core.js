@@ -68,15 +68,39 @@ function createNormalRandom(uniformRandom) {
   };
 }
 
-function createParticle(parentId, generation, time, position) {
-  const initialPosition = [...position];
+function exponentialRandom(seed, rate) {
+  if (rate <= 0) {
+    return Infinity;
+  }
 
+  const integerRandom = createIntegerRandom(seed);
+  const uniformRandom = createUniformRandom(integerRandom);
+
+  let u = uniformRandom();
+
+  if (u === 0) {
+    u = Number.EPSILON;
+  }
+
+  return -Math.log1p(-u) / rate;
+}
+
+function createParticle(
+  parentId,
+  generation,
+  time,
+  position,
+  seed,
+  branchRate,
+) {
   return {
     parentId,
     generation,
     birthTime: time,
-    position: initialPosition,
+    position: [...position],
     path: [[time, [...position]]],
+    seed,
+    branchTime: time + exponentialRandom(splitSeed(seed, 0), branchRate),
   };
 }
 
@@ -108,7 +132,16 @@ export function simulateBranchingProcess(payload) {
   let activeIds = [];
 
   for (let index = 0; index < initialParticles; index += 1) {
-    particles.push(createParticle(null, 0, 0, startingPosition));
+    particles.push(
+      createParticle(
+        null,
+        0,
+        0,
+        startingPosition,
+        splitSeed(seed, index),
+        branchingRate,
+      ),
+    );
     activeIds.push(index);
   }
 
@@ -162,6 +195,8 @@ export function simulateBranchingProcess(payload) {
             parent.generation + 1,
             time,
             parent.position,
+            splitSeed(parent.seed, childIndex + 1),
+            branchingRate,
           ),
         );
 
