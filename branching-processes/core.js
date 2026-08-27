@@ -1,3 +1,14 @@
+function lowbias32(x) {
+  x >>>= 0;
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+function splitSeed(seed, tag) {
+  return lowbias32((seed ^ Math.imul((tag + 1) >>> 0, 0x9e3779b9)) >>> 0);
+}
+
 function createIntegerRandom(seed) {
   let state = seed >>> 0;
 
