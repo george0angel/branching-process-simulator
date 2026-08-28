@@ -77,9 +77,7 @@ function createNormalRandom(seed) {
 }
 
 function exponentialRandom(seed, rate) {
-  if (rate <= 0) {
-    return Infinity;
-  }
+  if (rate <= 0) return Infinity;
 
   const uniformRandom = createUniformRandom(seed);
 
@@ -90,6 +88,11 @@ function exponentialRandom(seed, rate) {
   }
 
   return -Math.log1p(-u) / rate;
+}
+
+function normalRandomVector(seed, length) {
+  const normalRandom = createNormalRandom(seed);
+  return Array.from({ length }, () => normalRandom());
 }
 
 function createParticle(
@@ -104,11 +107,102 @@ function createParticle(
     parentId,
     generation,
     birthTime: time,
+    birthPosition: [...position],
     position: [...position],
     path: [[time, [...position]]],
     seed,
-    branchTime: time + exponentialRandom(splitSeed(seed, 0), branchRate),
+    motionSeed: splitSeed(seed, 0),
+    branchTime: time + exponentialRandom(seed, branchRate),
+    integerValues: [Array(position.length).fill(0)],
   };
+}
+
+const bridgeLevels = 14;
+
+function brownianBridgeValue(seed, time, dimensions) {
+  const endpoint = normalRandomVector(seed, dimensions);
+
+  let leftTime = 0;
+  let rightTime = 1;
+  let left = Array(dimensions).fill(0);
+  let right = endpoint;
+  let nodeSeed = splitSeed(seed, 0);
+
+  for (let level = 0; level < bridgeLevels; level += 1) {
+    const midpointTime = (leftTime + rightTime) / 2;
+    const noise = normalRandomVector(nodeSeed, dimensions);
+    const standardDeviation = Math.sqrt(rightTime - leftTime) / 2;
+    const midpoint = left.map(
+      (value, i) => (value + right[i]) / 2 + standardDeviation * noise[i],
+    );
+
+    if (time <= midpointTime) {
+      rightTime = midpointTime;
+      right = midpoint;
+      nodeSeed = splitSeed(nodeSeed, 0);
+    } else {
+      leftTime = midpointTime;
+      left = midpoint;
+      nodeSeed = splitSeed(nodeSeed, 1);
+    }
+  }
+
+  // Final interpolation based on the distribution of the brownian bridge.
+  const alpha = (time - leftTime) / (rightTime - leftTime);
+  const b = rightTime - time;
+  const noise = normalRandomVector(splitSeed(nodeSeed, 2), dimensions);
+  const standardDeviation = Math.sqrt(b * alpha);
+
+  return left.map(
+    (value, i) =>
+      value +
+      alpha * (right[i] - value) +
+      standardDeviation * noise[i] -
+      time * endpoint[i],
+  );
+}
+
+function brownianValue(particle, age) {
+  const dimensions = particle.position.length;
+  const leftAge = Math.floor(age);
+
+  while (particle.integerValues.length <= leftAge + 1) {
+    const k = particle.integerValues.length - 1;
+    const intervalSeed = splitSeed(particle.motionSeed, k);
+    const increment = normalRandomVector(
+      splitSeed(intervalSeed, 0),
+      dimensions,
+    );
+    const previous = particle.integerValues[k];
+
+    particle.integerValues.push(
+      previous.map((value, i) => value + increment[i]),
+    );
+  }
+
+  const left = particle.integerValues[leftAge];
+  if (leftAge === age) return [...left];
+  const right = particle.integerValues[leftAge + 1];
+
+  const intervalSeed = splitSeed(particle.motionSeed, leftAge);
+  const bridgeSeed = splitSeed(intervalSeed, 1);
+
+  const unitAge = age - leftAge;
+
+  const unitAgeValue = brownianBridgeValue(bridgeSeed, unitAge, dimensions);
+
+  return left.map(
+    (value, i) => value + unitAge * (right[i] - value) + unitAgeValue[i],
+  );
+}
+
+function getParticlePosition(particle, time, diffusion, drift) {
+  const age = time - particle.birthTime;
+  const motion = brownianValue(particle, age);
+
+  return particle.birthPosition.map(
+    (start, i) => start + drift[i] * age + diffusion[i] * motion[i],
+  );
 }
 
 export function simulateBranchingProcess(payload) {
@@ -131,8 +225,6 @@ export function simulateBranchingProcess(payload) {
   const boundedRandom = createBoundedRandom(seed);
   const normalRandom = createNormalRandom(seed);
 
-  const steps = Math.floor(duration / dt);
-
   const particles = [];
   let activeIds = [];
 
@@ -153,19 +245,73 @@ export function simulateBranchingProcess(payload) {
   const populationHistory = [[0, activeIds.length]];
   const frontierHistory = [[0, [...startingPosition], [...startingPosition]]];
 
+  const steps = Math.floor(duration / dt);
+
   for (let step = 1; step <= steps; step += 1) {
     const time = step * dt;
+
+    while (maxParticles === 0 || activeIds.length < maxParticles) {
+      let parentId = null;
+      let parentIndex = -1;
+      let branchTime = Infinity;
+
+      for (let i = 0; i < activeIds.length; i++) {
+        const id = activeIds[i];
+
+        if (particles[id].branchTime < branchTime) {
+          parentId = id;
+          parentIndex = i;
+          branchTime = particles[id].branchTime;
+        }
+      }
+
+      if (parentId === null || branchTime > time) break;
+
+      const parent = particles[parentId];
+
+      activeIds[parentIndex] = activeIds[activeIds.length - 1];
+      activeIds.pop();
+
+      const branchPosition =
+        processType === `bm`
+          ? getParticlePosition(parent, branchTime, diffusion, drift)
+          : [...parent.position];
+
+      parent.position = [...branchPosition];
+      parent.path.push([branchTime, [...branchPosition]]);
+
+      if (parent.path[parent.path.length - 1][0] !== branchTime) {
+        parent.position = [...branchPosition];
+        parent.path.push([branchTime, parent.position]);
+      }
+
+      for (let childIndex = 0; childIndex < 2; childIndex += 1) {
+        const childId = particles.length;
+
+        particles.push(
+          createParticle(
+            parentId,
+            parent.generation + 1,
+            branchTime,
+            branchPosition,
+            splitSeed(parent.seed, childIndex + 1),
+            branchingRate,
+          ),
+        );
+        activeIds.push(childId);
+      }
+    }
 
     for (const particleId of activeIds) {
       const particle = particles[particleId];
 
       if (processType == `bm`) {
-        for (let i = 0; i < particle.position.length; i++) {
-          if (processType == `bm`) {
-            particle.position[i] +=
-              drift[i] * dt + diffusion[i] * Math.sqrt(dt) * normalRandom();
-          }
-        }
+        particle.position = getParticlePosition(
+          particle,
+          time,
+          diffusion,
+          drift,
+        );
       } else if (processType == `rw`) {
         particle.position[boundedRandom(particle.position.length)] +=
           -1 + 2 * binaryRandom();
@@ -173,43 +319,6 @@ export function simulateBranchingProcess(payload) {
 
       particle.path.push([time, [...particle.position]]);
     }
-
-    const nextActive = [];
-    let activeCount = activeIds.length;
-
-    for (const particleId of activeIds) {
-      const parent = particles[particleId];
-
-      const shouldBranch =
-        (activeCount < maxParticles || maxParticles == 0) &&
-        parent.branchTime < time;
-
-      if (!shouldBranch) {
-        nextActive.push(particleId);
-        continue;
-      }
-
-      activeCount += 1;
-
-      for (let childIndex = 0; childIndex < 2; childIndex += 1) {
-        const childId = particles.length;
-
-        particles.push(
-          createParticle(
-            particleId,
-            parent.generation + 1,
-            time,
-            parent.position,
-            splitSeed(parent.seed, childIndex + 1),
-            branchingRate,
-          ),
-        );
-
-        nextActive.push(childId);
-      }
-    }
-
-    activeIds = nextActive;
 
     let minPosition = Array(dimensions).fill(Infinity);
     let maxPosition = Array(dimensions).fill(-Infinity);
