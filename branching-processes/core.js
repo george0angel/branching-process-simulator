@@ -23,26 +23,34 @@ function createIntegerRandom(seed) {
   };
 }
 
-function createBinaryRandom(integerRandom) {
+function createBinaryRandom(seed) {
+  const integerRandom = createIntegerRandom(seed);
+
   return function nextBinary() {
     return integerRandom() & 1;
   };
 }
 
-function createUniformRandom(boundedRandom) {
+function createUniformRandom(seed) {
+  const integerRandom = createIntegerRandom(seed);
+
   return function nextUniform() {
-    return (boundedRandom() >>> 0) / 4294967296;
+    return (integerRandom() >>> 0) / 4294967296;
   };
 }
 
 // Random Integer in range [0, range - 1]
-function createBoundedRandom(uniformRandom) {
+function createBoundedRandom(seed) {
+  const uniformRandom = createUniformRandom(seed);
+
   return function nextBounded(range) {
     return Math.floor(uniformRandom() * range);
   };
 }
 
-function createNormalRandom(uniformRandom) {
+function createNormalRandom(seed) {
+  const uniformRandom = createUniformRandom(seed);
+
   let spare = null;
 
   return function nextNormal() {
@@ -73,8 +81,7 @@ function exponentialRandom(seed, rate) {
     return Infinity;
   }
 
-  const integerRandom = createIntegerRandom(seed);
-  const uniformRandom = createUniformRandom(integerRandom);
+  const uniformRandom = createUniformRandom(seed);
 
   let u = uniformRandom();
 
@@ -119,10 +126,10 @@ export function simulateBranchingProcess(payload) {
   const dimensions = startingPosition.length;
 
   const integerRandom = createIntegerRandom(seed);
-  const binaryRandom = createBinaryRandom(integerRandom);
-  const uniformRandom = createUniformRandom(integerRandom);
-  const boundedRandom = createBoundedRandom(uniformRandom);
-  const normalRandom = createNormalRandom(uniformRandom);
+  const binaryRandom = createBinaryRandom(seed);
+  const uniformRandom = createUniformRandom(seed);
+  const boundedRandom = createBoundedRandom(seed);
+  const normalRandom = createNormalRandom(seed);
 
   const steps = Math.floor(duration / dt);
 
