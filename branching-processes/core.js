@@ -382,9 +382,29 @@ export function simulateBranchingProcess(payload) {
   );
 
   let maximumGeneration = 0;
+  let minPosition = Array(dimensions).fill(Infinity);
+  let maxPosition = Array(dimensions).fill(-Infinity);
 
   for (const particle of particles) {
     maximumGeneration = Math.max(maximumGeneration, particle.generation);
+
+    for (const [, position] of particle.path) {
+      for (
+        let dimensionIndex = 0;
+        dimensionIndex < dimensions;
+        dimensionIndex++
+      ) {
+        minPosition[dimensionIndex] = Math.min(
+          minPosition[dimensionIndex],
+          position[dimensionIndex],
+        );
+
+        maxPosition[dimensionIndex] = Math.max(
+          maxPosition[dimensionIndex],
+          position[dimensionIndex],
+        );
+      }
+    }
   }
 
   return {
@@ -417,6 +437,8 @@ export function simulateBranchingProcess(payload) {
       maximumGeneration,
       meanFinalPosition: meanFinalPosition,
       standardDeviation: variance.map((value) => Math.sqrt(value)),
+      minPosition,
+      maxPosition,
       minFinalPosition,
       maxFinalPosition,
       populationCapReached:

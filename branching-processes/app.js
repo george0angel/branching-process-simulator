@@ -9,6 +9,10 @@ const summary = {
   particlesCreated: document.querySelector("#particles-created"),
   maximumGeneration: document.querySelector("#maximum-generation"),
   meanFinalPosition: document.querySelector("#mean-final-position"),
+  minPosition: document.querySelector("#min-position"),
+  maxPosition: document.querySelector("#max-position"),
+  minFinalPosition: document.querySelector("#min-final-position"),
+  maxFinalPosition: document.querySelector("#max-final-position"),
   note: document.querySelector("#note"),
 };
 
@@ -245,7 +249,18 @@ function showSummary(result) {
   summary.meanFinalPosition.textContent = result.summary.meanFinalPosition
     .map((value) => value.toFixed(3))
     .join(", ");
-
+  summary.minPosition.textContent = result.summary.minPosition
+    .map((value) => value.toFixed(3))
+    .join(", ");
+  summary.maxPosition.textContent = result.summary.maxPosition
+    .map((value) => value.toFixed(3))
+    .join(", ");
+  summary.minFinalPosition.textContent = result.summary.minFinalPosition
+    .map((value) => value.toFixed(3))
+    .join(", ");
+  summary.maxFinalPosition.textContent = result.summary.maxFinalPosition
+    .map((value) => value.toFixed(3))
+    .join(", ");
   summary.note.textContent = result.summary.populationCapReached
     ? "The population cap was reached."
     : "The population cap was not reached.";
