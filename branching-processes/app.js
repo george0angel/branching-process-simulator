@@ -183,25 +183,8 @@ function drawAnimated(result, graphMode, animationDuration) {
       },
       buttons: [
         {
-          label: "&#9199;",
-          method: "animate",
-          args: [
-            null,
-            {
-              mode: "immediate",
-              frame: { duration: frameDuration, redraw: true },
-              fromcurrent: true,
-              transition: { duration: 0 },
-            },
-          ],
-          args2: [
-            [null],
-            {
-              mode: "immediate",
-              frame: { duration: 0, redraw: false },
-              transition: { duration: 0 },
-            },
-          ],
+          label: "&#9654;",
+          method: "skip",
         },
       ],
     },
@@ -293,6 +276,106 @@ function drawAnimated(result, graphMode, animationDuration) {
     mode: "immediate",
     frame: { duration: 0, redraw: true },
     transition: { duration: 0 },
+  });
+
+  const plot = document.getElementById("trajectory-plot");
+  let isPlaying = false;
+  let currentFrame = frames.length - 1;
+
+  plot.on("plotly_animatingframe", (event) => {
+    const index = Number(event.name.slice("frame-".length));
+    currentFrame = index;
+
+    if (plot.layout.sliders[0].active !== index) {
+      Plotly.relayout(plot, {
+        "sliders[0].active": index,
+      });
+    }
+  });
+
+  plot.on("plotly_sliderchange", (event) => {
+    currentFrame = event.slider.active;
+    if (isPlaying) {
+      isPlaying = false;
+
+      Plotly.relayout(plot, {
+        "updatemenus[0].buttons[0].label": "&#9654;",
+      });
+    }
+  });
+
+  plot.on("plotly_buttonclicked", async () => {
+    if (isPlaying) {
+      // Pause
+      isPlaying = false;
+
+      Plotly.animate(plot, [null], {
+        mode: "immediate",
+        frame: {
+          duration: 0,
+          redraw: false,
+        },
+        transition: {
+          duration: 0,
+        },
+      });
+
+      Plotly.relayout(plot, {
+        "updatemenus[0].buttons[0].label": "&#9654;",
+      });
+
+      return;
+    }
+
+    // Play
+    const atEnd = currentFrame === frames.length - 1;
+    isPlaying = true;
+
+    Plotly.relayout(plot, {
+      "updatemenus[0].buttons[0].label": "&#9208;",
+    });
+
+    if (atEnd) {
+      // At the end then restart from the beginning.
+      try {
+        await Plotly.animate(
+          plot,
+          frames.map((frame) => frame.name),
+          {
+            mode: "immediate",
+            fromcurrent: false,
+            frame: {
+              duration: frameDuration,
+              redraw: true,
+            },
+            transition: {
+              duration: 0,
+            },
+          },
+        );
+      } catch {}
+    } else {
+      // Paused partly through then continue from current frame.
+      try {
+        await Plotly.animate(plot, null, {
+          mode: "immediate",
+          fromcurrent: true,
+          frame: {
+            duration: frameDuration,
+            redraw: true,
+          },
+          transition: {
+            duration: 0,
+          },
+        });
+      } catch {}
+    }
+
+    isPlaying = false;
+
+    Plotly.relayout(plot, {
+      "updatemenus[0].buttons[0].label": "&#9654;",
+    });
   });
 }
 
