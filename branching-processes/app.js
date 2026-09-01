@@ -38,8 +38,6 @@ function getSpatialDimensions(graphMode) {
       return 2;
     case "xyz":
       return 3;
-    default:
-      throw new Error(`Invalid graph mode.`);
   }
 }
 
@@ -232,10 +230,145 @@ function draw3D(result, graphMode) {
   );
 }
 
+function getFrameData(particle, graphMode, currentTime) {
+  const x = [];
+  const y = [];
+  const z = [];
+
+  for (const [time, position] of particle.path) {
+    if (time > currentTime) {
+      break;
+    }
+
+    switch (graphMode) {
+      case "xt":
+        x.push(time);
+        y.push(position[0]);
+        break;
+      case "xy":
+        x.push(position[0]);
+        y.push(position[1]);
+        break;
+      case "xyt":
+        x.push(position[0]);
+        y.push(position[1]);
+        z.push(time);
+        break;
+      case "xyz":
+        x.push(position[0]);
+        y.push(position[1]);
+        z.push(position[2]);
+        break;
+    }
+  }
+
+  return graphMode === "xt" || graphMode === "xy" ? { x, y } : { x, y, z };
+}
+
+function drawAnimated(result, graphMode, animationDuration) {
+  const frameCount = (20 * animationDuration) / 1000;
+  const startTime = result.populationHistory.at(0)[0];
+  const endTime = result.populationHistory.at(-1)[0];
+  const times = Array.from(
+    { length: frameCount },
+    (_, index) =>
+      startTime + ((endTime - startTime) * index) / (frameCount - 1),
+  );
+  const traceIds = result.particles.map((_, index) => index);
+  const frames = times.map((time, index) => ({
+    name: `frame-${index}`,
+    traces: traceIds,
+    data: result.particles.map((particle) =>
+      getFrameData(particle, graphMode, time),
+    ),
+  }));
+
+  const is2D = graphMode === "xt" || graphMode === "xy";
+  const traces = frames[0].data.map((data) => ({
+    type: is2D ? "scattergl" : "scatter3d",
+    mode: "lines",
+    ...data,
+    line: {
+      width: is2D ? 1 : 2,
+    },
+    showlegend: false,
+  }));
+
+  const minPosition = result.summary.minPosition;
+  const maxPosition = result.summary.maxPosition;
+  const range = minPosition.map((min, index) => [min, maxPosition[index]]);
+  const frameDuration = animationDuration / Math.max(frames.length - 1, 1);
+  let layout;
+
+  if (is2D) {
+    layout = {
+      xaxis: {
+        title: { text: graphMode === "xt" ? "Time" : "X" },
+        range: graphMode === "xt" ? [startTime, endTime] : range[0],
+      },
+
+      yaxis: {
+        title: { text: graphMode === "xt" ? "X" : "Y" },
+        range: graphMode === "xt" ? range[0] : range[1],
+      },
+
+      margin: {
+        l: 40,
+        r: 20,
+        t: 20,
+        b: 30,
+      },
+    };
+  } else {
+    layout = {
+      scene: {
+        xaxis: {
+          title: { text: "X" },
+          range: range[0],
+        },
+
+        yaxis: {
+          title: { text: "Y" },
+          range: range[1],
+        },
+
+        zaxis: {
+          title: { text: graphMode === "xyt" ? "Time" : "Z" },
+          range: graphMode === "xyt" ? [startTime, endTime] : range[2],
+        },
+
+        aspectmode: "data",
+      },
+
+      margin: {
+        l: 0,
+        r: 0,
+        t: 0,
+        b: 0,
+      },
+    };
+  }
+
+  Plotly.purge("trajectory-plot");
+  Plotly.newPlot("trajectory-plot", traces, layout, {
+    responsive: true,
+  });
+  Plotly.addFrames("trajectory-plot", frames);
+  Plotly.animate("trajectory-plot", null, {
+    fromcurrent: true,
+    mode: "immediate",
+    frame: { duration: frameDuration, redraw: true },
+    transition: { duration: 0 },
+  });
+}
+
 function draw(result) {
   const graphMode = document.querySelector("#graph-mode").value;
-
-  if (graphMode === "xt" || graphMode === "xy") {
+  if (document.querySelector("#animation-on").checked) {
+    const animationDuration =
+      Number(document.querySelector("#animation").value) * 1000;
+    drawAnimated(result, graphMode, animationDuration);
+  } else if (graphMode === "xt" || graphMode === "xy") {
     draw2D(result, graphMode);
   } else {
     draw3D(result, graphMode);

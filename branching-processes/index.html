@@ -178,6 +178,25 @@
             </label>
           </div>
 
+          <div data-process="bm rw" style="display: none">
+            <label>
+              Animation Duration
+              <input
+                id="animation"
+                type="number"
+                min="1"
+                max="30"
+                step="1"
+                data-jump="1"
+                value="3"
+              />
+              <label
+                ><span style="font-size: small">Enabled?</span
+                ><input id="animation-on" type="checkbox" checked
+              /></label>
+            </label>
+          </div>
+
           <button id="simulate-button" type="submit">Run simulation</button>
           <p id="status">Ready</p>
         </form>
