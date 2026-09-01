@@ -98,145 +98,14 @@ function runWorker(parameters) {
   });
 }
 
-function draw2D(result, graphMode) {
-  const traces = [];
-
-  for (const particle of result.particles) {
-    if (particle.path.length < 2) {
-      continue;
-    }
-
-    var x = [];
-    var y = [];
-
-    for (const [time, position] of particle.path) {
-      if (graphMode === "xt") {
-        x.push(time);
-        y.push(position[0]);
-      } else if (graphMode === "xy") {
-        x.push(position[0]);
-        y.push(position[1]);
-      }
-    }
-
-    traces.push({
-      type: "scattergl",
-      mode: "lines",
-      x: x,
-      y: y,
-      line: {
-        width: 1,
-      },
-      showlegend: false,
-    });
-  }
-
-  Plotly.react(
-    "trajectory-plot",
-    traces,
-    {
-      xaxis: {
-        title: { text: graphMode === "xt" ? "Time" : "X" },
-      },
-
-      yaxis: {
-        title: { text: graphMode === "xt" ? "X" : "Y" },
-      },
-
-      margin: {
-        l: 40,
-        r: 20,
-        t: 20,
-        b: 30,
-      },
-    },
-
-    {
-      responsive: true,
-    },
-  );
-}
-
-function draw3D(result, graphMode) {
-  const traces = [];
-
-  for (const particle of result.particles) {
-    if (particle.path.length < 2) {
-      continue;
-    }
-
-    const x = [];
-    const y = [];
-    const z = [];
-
-    for (const [time, position] of particle.path) {
-      if (graphMode === "xyt") {
-        x.push(position[0]);
-        y.push(position[1]);
-        z.push(time);
-      } else {
-        x.push(position[0]);
-        y.push(position[1]);
-        z.push(position[2]);
-      }
-    }
-
-    traces.push({
-      type: "scatter3d",
-      mode: "lines",
-
-      x,
-      y,
-      z,
-
-      line: {
-        width: 2,
-      },
-
-      showlegend: false,
-    });
-  }
-
-  Plotly.react(
-    "trajectory-plot",
-    traces,
-    {
-      scene: {
-        xaxis: {
-          title: { text: "X" },
-        },
-
-        yaxis: {
-          title: { text: "Y" },
-        },
-
-        zaxis: {
-          title: { text: graphMode === "xyt" ? "Time" : "Z" },
-        },
-
-        aspectmode: "data",
-      },
-
-      margin: {
-        l: 0,
-        r: 0,
-        t: 0,
-        b: 0,
-      },
-    },
-    {
-      responsive: true,
-    },
-  );
-}
-
 function getFrameData(particle, graphMode, currentTime) {
   const x = [];
   const y = [];
   const z = [];
 
   for (const [time, position] of particle.path) {
-    if (time > currentTime) {
+    const EPSILON = 1e-12;
+    if (time > currentTime + EPSILON) {
       break;
     }
 
@@ -266,7 +135,10 @@ function getFrameData(particle, graphMode, currentTime) {
 }
 
 function drawAnimated(result, graphMode, animationDuration) {
-  const frameCount = (20 * animationDuration) / 1000;
+  const frameCount = Math.min(
+    (20 * animationDuration) / 1000 + 1,
+    result.summary.steps + 1,
+  );
   const startTime = result.populationHistory.at(0)[0];
   const endTime = result.populationHistory.at(-1)[0];
   const times = Array.from(
@@ -298,6 +170,65 @@ function drawAnimated(result, graphMode, animationDuration) {
   const maxPosition = result.summary.maxPosition;
   const range = minPosition.map((min, index) => [min, maxPosition[index]]);
   const frameDuration = animationDuration / Math.max(frames.length - 1, 1);
+
+  const updatemenus = [
+    {
+      type: "buttons",
+      direction: "left",
+      showactive: false,
+      x: 0,
+      y: -0.14,
+      font: {
+        size: 16,
+      },
+      buttons: [
+        {
+          label: "&#9199;",
+          method: "animate",
+          args: [
+            null,
+            {
+              mode: "immediate",
+              frame: { duration: frameDuration, redraw: true },
+              fromcurrent: true,
+              transition: { duration: 0 },
+            },
+          ],
+          args2: [
+            [null],
+            {
+              mode: "immediate",
+              frame: { duration: 0, redraw: false },
+              transition: { duration: 0 },
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  const sliders = [
+    {
+      active: frames.length - 1,
+      y: -0.04,
+      currentvalue: {
+        prefix: "Time: ",
+      },
+      steps: frames.map((frame, index) => ({
+        label: times[index].toFixed(2),
+        method: "animate",
+        args: [
+          [frame.name],
+          {
+            mode: "immediate",
+            frame: { duration: 0, redraw: true },
+            transition: { duration: 0 },
+          },
+        ],
+      })),
+    },
+  ];
+
   let layout;
 
   if (is2D) {
@@ -318,6 +249,8 @@ function drawAnimated(result, graphMode, animationDuration) {
         t: 20,
         b: 30,
       },
+      updatemenus,
+      sliders,
     };
   } else {
     layout = {
@@ -346,6 +279,8 @@ function drawAnimated(result, graphMode, animationDuration) {
         t: 0,
         b: 0,
       },
+      updatemenus,
+      sliders,
     };
   }
 
@@ -354,25 +289,18 @@ function drawAnimated(result, graphMode, animationDuration) {
     responsive: true,
   });
   Plotly.addFrames("trajectory-plot", frames);
-  Plotly.animate("trajectory-plot", null, {
-    fromcurrent: true,
+  Plotly.animate("trajectory-plot", [frames.at(-1).name], {
     mode: "immediate",
-    frame: { duration: frameDuration, redraw: true },
+    frame: { duration: 0, redraw: true },
     transition: { duration: 0 },
   });
 }
 
 function draw(result) {
   const graphMode = document.querySelector("#graph-mode").value;
-  if (document.querySelector("#animation-on").checked) {
-    const animationDuration =
-      Number(document.querySelector("#animation").value) * 1000;
-    drawAnimated(result, graphMode, animationDuration);
-  } else if (graphMode === "xt" || graphMode === "xy") {
-    draw2D(result, graphMode);
-  } else {
-    draw3D(result, graphMode);
-  }
+  const animationDuration =
+    Number(document.querySelector("#animation").value) * 1000;
+  drawAnimated(result, graphMode, animationDuration);
 }
 
 function showSummary(result) {

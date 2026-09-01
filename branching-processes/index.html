@@ -70,8 +70,8 @@
                 min="0.0001"
                 max="1"
                 step="0.00000001"
-                data-jump="0.01"
-                value="0.05"
+                data-jump="0.001"
+                value="0.01"
               />
             </label>
           </div>
@@ -178,7 +178,10 @@
             </label>
           </div>
 
-          <div data-process="bm rw" style="display: none">
+          <div
+            data-process="bm rw"
+            style="display: none; margin-bottom: 0.5rem"
+          >
             <label>
               Animation Duration
               <input
@@ -188,12 +191,8 @@
                 max="30"
                 step="1"
                 data-jump="1"
-                value="3"
+                value="2"
               />
-              <label
-                ><span style="font-size: small">Enabled?</span
-                ><input id="animation-on" type="checkbox" checked
-              /></label>
             </label>
           </div>
 
