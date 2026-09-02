@@ -1,3 +1,5 @@
+import { PriorityQueue } from "@datastructures-js/priority-queue";
+
 function lowbias32(x) {
   x >>>= 0;
   x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
@@ -231,19 +233,32 @@ export function simulateBranchingProcess(payload) {
   const particles = [];
   let activeIds = new Set();
 
+  const branchQueue = new PriorityQueue((a, b) => {
+    if (a.branchTime !== b.branchTime) {
+      return a.branchTime - b.branchTime;
+    }
+
+    return a.particleId - b.particleId;
+  });
+
   for (let index = 0; index < initialParticles; index += 1) {
-    particles.push(
-      createParticle(
-        null,
-        0,
-        0,
-        startingPosition,
-        splitSeed(seed, index),
-        branchingRate,
-        processType,
-      ),
+    const particle = createParticle(
+      null,
+      0,
+      0,
+      startingPosition,
+      splitSeed(seed, index),
+      branchingRate,
+      processType,
     );
+
+    particles.push(particle);
     activeIds.add(index);
+
+    branchQueue.enqueue({
+      particleId: index,
+      branchTime: particle.branchTime,
+    });
   }
 
   const populationHistory = [[0, activeIds.size]];
@@ -255,18 +270,16 @@ export function simulateBranchingProcess(payload) {
     const time = step * dt;
 
     while (maxParticles === 0 || activeIds.size < maxParticles) {
-      let parentId = null;
-      let branchTime = Infinity;
+      if (branchQueue.isEmpty()) break;
 
-      for (const id of activeIds) {
-        if (particles[id].branchTime < branchTime) {
-          parentId = id;
-          branchTime = particles[id].branchTime;
-        }
-      }
+      const nextBranch = branchQueue.front();
 
-      if (parentId === null || branchTime > time) break;
+      if (nextBranch.branchTime > time) break;
 
+      branchQueue.dequeue();
+
+      const parentId = nextBranch.particleId;
+      const branchTime = nextBranch.branchTime;
       const parent = particles[parentId];
 
       activeIds.delete(parentId);
@@ -285,18 +298,23 @@ export function simulateBranchingProcess(payload) {
       for (let childIndex = 0; childIndex < 2; childIndex += 1) {
         const childId = particles.length;
 
-        particles.push(
-          createParticle(
-            parentId,
-            parent.generation + 1,
-            branchTime,
-            branchPosition,
-            splitSeed(parent.seed, childIndex + 1),
-            branchingRate,
-            processType,
-          ),
+        const child = createParticle(
+          parentId,
+          parent.generation + 1,
+          branchTime,
+          branchPosition,
+          splitSeed(parent.seed, childIndex + 1),
+          branchingRate,
+          processType,
         );
+
+        particles.push(child);
         activeIds.add(childId);
+
+        branchQueue.enqueue({
+          particleId: childId,
+          branchTime: child.branchTime,
+        });
       }
     }
 
