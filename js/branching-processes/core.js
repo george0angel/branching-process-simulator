@@ -273,11 +273,9 @@ export function simulateBranchingProcess(payload) {
           : [...parent.position];
 
       parent.position = [...branchPosition];
-      parent.path.push([branchTime, [...branchPosition]]);
 
-      if (parent.path[parent.path.length - 1][0] !== branchTime) {
-        parent.position = [...branchPosition];
-        parent.path.push([branchTime, parent.position]);
+      if (parent.path.at(-1)?.[0] !== branchTime) {
+        parent.path.push([branchTime, [...branchPosition]]);
       }
 
       for (let childIndex = 0; childIndex < 2; childIndex += 1) {
