@@ -269,6 +269,17 @@ export function simulateBranchingProcess(payload) {
   for (let step = 1; step <= steps; step += 1) {
     const time = step * dt;
 
+    if (processType === `rw`) {
+      for (const particleId of activeIds) {
+        const particle = particles[particleId];
+
+        particle.position[boundedRandom(particle.position.length)] +=
+          -1 + 2 * binaryRandom();
+
+        particle.path.push([time, [...particle.position]]);
+      }
+    }
+
     while (maxParticles === 0 || activeIds.size < maxParticles) {
       if (branchQueue.isEmpty()) break;
 
@@ -318,22 +329,19 @@ export function simulateBranchingProcess(payload) {
       }
     }
 
-    for (const particleId of activeIds) {
-      const particle = particles[particleId];
+    if (processType === `bm`) {
+      for (const particleId of activeIds) {
+        const particle = particles[particleId];
 
-      if (processType == `bm`) {
         particle.position = getParticlePosition(
           particle,
           time,
           diffusion,
           drift,
         );
-      } else if (processType == `rw`) {
-        particle.position[boundedRandom(particle.position.length)] +=
-          -1 + 2 * binaryRandom();
-      }
 
-      particle.path.push([time, [...particle.position]]);
+        particle.path.push([time, [...particle.position]]);
+      }
     }
 
     let minPosition = Array(dimensions).fill(Infinity);
