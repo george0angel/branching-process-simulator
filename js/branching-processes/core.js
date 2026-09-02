@@ -226,7 +226,7 @@ export function simulateBranchingProcess(payload) {
   const normalRandom = createNormalRandom(seed);
 
   const particles = [];
-  let activeIds = [];
+  let activeIds = new Set();
 
   for (let index = 0; index < initialParticles; index += 1) {
     particles.push(
@@ -239,10 +239,10 @@ export function simulateBranchingProcess(payload) {
         branchingRate,
       ),
     );
-    activeIds.push(index);
+    activeIds.add(index);
   }
 
-  const populationHistory = [[0, activeIds.length]];
+  const populationHistory = [[0, activeIds.size]];
   const frontierHistory = [[0, [...startingPosition], [...startingPosition]]];
 
   const steps = Math.floor(duration / dt);
@@ -250,17 +250,13 @@ export function simulateBranchingProcess(payload) {
   for (let step = 1; step <= steps; step += 1) {
     const time = step * dt;
 
-    while (maxParticles === 0 || activeIds.length < maxParticles) {
+    while (maxParticles === 0 || activeIds.size < maxParticles) {
       let parentId = null;
-      let parentIndex = -1;
       let branchTime = Infinity;
 
-      for (let i = 0; i < activeIds.length; i++) {
-        const id = activeIds[i];
-
+      for (const id of activeIds) {
         if (particles[id].branchTime < branchTime) {
           parentId = id;
-          parentIndex = i;
           branchTime = particles[id].branchTime;
         }
       }
@@ -269,8 +265,7 @@ export function simulateBranchingProcess(payload) {
 
       const parent = particles[parentId];
 
-      activeIds[parentIndex] = activeIds[activeIds.length - 1];
-      activeIds.pop();
+      activeIds.delete(parentId);
 
       const branchPosition =
         processType === `bm`
@@ -298,7 +293,7 @@ export function simulateBranchingProcess(payload) {
             branchingRate,
           ),
         );
-        activeIds.push(childId);
+        activeIds.add(childId);
       }
     }
 
@@ -342,7 +337,7 @@ export function simulateBranchingProcess(payload) {
       }
     }
 
-    populationHistory.push([time, activeIds.length]);
+    populationHistory.push([time, activeIds.size]);
     frontierHistory.push([time, minPosition, maxPosition]);
   }
 
@@ -351,8 +346,9 @@ export function simulateBranchingProcess(payload) {
   let minFinalPosition = Array(dimensions).fill(Infinity);
   let maxFinalPosition = Array(dimensions).fill(-Infinity);
 
-  for (let index = 0; index < activeIds.length; index += 1) {
-    const position = particles[activeIds[index]].position;
+  let index = 0;
+  for (const particleId of activeIds) {
+    const position = particles[particleId].position;
 
     for (
       let dimensionIndex = 0;
@@ -375,10 +371,11 @@ export function simulateBranchingProcess(payload) {
       const newDifference = currentPosition - meanFinalPosition[dimensionIndex];
       sumOfSquares[dimensionIndex] += difference * newDifference;
     }
+    index++;
   }
 
   const variance = sumOfSquares.map(
-    (sumOfSquare) => sumOfSquare / activeIds.length,
+    (sumOfSquare) => sumOfSquare / activeIds.size,
   );
 
   let maximumGeneration = 0;
@@ -432,7 +429,7 @@ export function simulateBranchingProcess(payload) {
     frontierHistory,
 
     summary: {
-      finalPopulation: activeIds.length,
+      finalPopulation: activeIds.size,
       totalParticlesCreated: particles.length,
       maximumGeneration,
       meanFinalPosition: meanFinalPosition,
@@ -442,7 +439,7 @@ export function simulateBranchingProcess(payload) {
       minFinalPosition,
       maxFinalPosition,
       populationCapReached:
-        maxParticles !== 0 && activeIds.length >= maxParticles,
+        maxParticles !== 0 && activeIds.size >= maxParticles,
       steps,
     },
   };
