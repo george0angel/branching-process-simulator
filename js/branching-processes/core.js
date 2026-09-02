@@ -102,7 +102,10 @@ function createParticle(
   position,
   seed,
   branchRate,
+  processType,
 ) {
+  const branchTime = time + exponentialRandom(seed, branchRate);
+
   return {
     parentId,
     generation,
@@ -112,7 +115,7 @@ function createParticle(
     path: [[time, [...position]]],
     seed,
     motionSeed: splitSeed(seed, 0),
-    branchTime: time + exponentialRandom(seed, branchRate),
+    branchTime: processType === `rw` ? Math.ceil(branchTime) : branchTime,
     integerValues: [Array(position.length).fill(0)],
   };
 }
@@ -237,6 +240,7 @@ export function simulateBranchingProcess(payload) {
         startingPosition,
         splitSeed(seed, index),
         branchingRate,
+        processType,
       ),
     );
     activeIds.add(index);
@@ -289,6 +293,7 @@ export function simulateBranchingProcess(payload) {
             branchPosition,
             splitSeed(parent.seed, childIndex + 1),
             branchingRate,
+            processType,
           ),
         );
         activeIds.add(childId);
