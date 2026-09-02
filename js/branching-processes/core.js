@@ -224,11 +224,8 @@ export function simulateBranchingProcess(payload) {
 
   const dimensions = startingPosition.length;
 
-  const integerRandom = createIntegerRandom(seed);
-  const binaryRandom = createBinaryRandom(seed);
-  const uniformRandom = createUniformRandom(seed);
-  const boundedRandom = createBoundedRandom(seed);
-  const normalRandom = createNormalRandom(seed);
+  const binaryRandom = createBinaryRandom(splitSeed(seed, 0));
+  const boundedRandom = createBoundedRandom(splitSeed(seed, 1));
 
   const particles = [];
   let activeIds = new Set();
@@ -247,7 +244,7 @@ export function simulateBranchingProcess(payload) {
       0,
       0,
       startingPosition,
-      splitSeed(seed, index),
+      splitSeed(seed, index + 3),
       branchingRate,
       processType,
     );
