@@ -75,25 +75,27 @@ function readParameters() {
 }
 
 function runWorker(parameters) {
+  const currentRequest = ++requestId;
+
   return new Promise((resolve, reject) => {
-    requestId += 1;
-    const currentRequest = requestId;
+    const cleanup = () => {
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onError);
+    };
 
-    function receiveMessage(event) {
-      if (event.data.requestId !== currentRequest) {
-        return;
-      }
+    const onMessage = ({ data }) => {
+      if (data.requestId !== currentRequest) return;
+      cleanup();
+      data.error ? reject(new Error(data.error)) : resolve(data.result);
+    };
 
-      worker.removeEventListener("message", receiveMessage);
+    const onError = (e) => {
+      cleanup();
+      reject(new Error(e.message || "Worker error"));
+    };
 
-      if (event.data.error) {
-        reject(new Error(event.data.error));
-      } else {
-        resolve(event.data.result);
-      }
-    }
-
-    worker.addEventListener("message", receiveMessage);
+    worker.addEventListener("message", onMessage);
+    worker.addEventListener("error", onError);
     worker.postMessage({ requestId: currentRequest, parameters });
   });
 }
