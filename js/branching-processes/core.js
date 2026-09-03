@@ -119,59 +119,105 @@ function createParticle(
     motionSeed: splitSeed(seed, 0),
     branchTime: processType === `rw` ? Math.ceil(branchTime) : branchTime,
     integerValues: [Array(position.length).fill(0)],
+    roots: [], // Index 0 for times in range [0,1] etc.
   };
 }
 
 const bridgeLevels = 14;
 
-function brownianBridgeValue(seed, time, dimensions) {
-  const endpoint = normalRandomVector(seed, dimensions);
+function createBridgeNode(leftTime, rightTime, left, right, seed) {
+  return {
+    leftTime,
+    rightTime,
+    left,
+    right,
+    seed,
 
-  let leftTime = 0;
-  let rightTime = 1;
-  let left = Array(dimensions).fill(0);
-  let right = endpoint;
-  let nodeSeed = splitSeed(seed, 0);
+    midpointTime: null,
+    midpoint: null,
 
-  for (let level = 0; level < bridgeLevels; level += 1) {
-    const midpointTime = (leftTime + rightTime) / 2;
-    const noise = normalRandomVector(nodeSeed, dimensions);
-    const standardDeviation = Math.sqrt(rightTime - leftTime) / 2;
-    const midpoint = left.map(
-      (value, i) => (value + right[i]) / 2 + standardDeviation * noise[i],
-    );
+    leftChild: null,
+    rightChild: null,
+  };
+}
 
-    if (time <= midpointTime) {
-      rightTime = midpointTime;
-      right = midpoint;
-      nodeSeed = splitSeed(nodeSeed, 0);
-    } else {
-      leftTime = midpointTime;
-      left = midpoint;
-      nodeSeed = splitSeed(nodeSeed, 1);
+function bridgeMidpoint(node, dimensions) {
+  if (node.midpoint !== null) {
+    return;
+  }
+
+  node.midpointTime = (node.leftTime + node.rightTime) / 2;
+
+  const noise = normalRandomVector(node.seed, dimensions);
+
+  const standardDeviation = Math.sqrt(node.rightTime - node.leftTime) / 2;
+
+  node.midpoint = node.left.map(
+    (value, i) => (value + node.right[i]) / 2 + standardDeviation * noise[i],
+  );
+}
+
+function getBridgeChild(node, goLeft, dimensions) {
+  bridgeMidpoint(node, dimensions);
+
+  if (goLeft) {
+    if (node.leftChild === null) {
+      node.leftChild = createBridgeNode(
+        node.leftTime,
+        node.midpointTime,
+        node.left,
+        node.midpoint,
+        splitSeed(node.seed, 0),
+      );
     }
+
+    return node.leftChild;
+  } else {
+    if (node.rightChild === null) {
+      node.rightChild = createBridgeNode(
+        node.midpointTime,
+        node.rightTime,
+        node.midpoint,
+        node.right,
+        splitSeed(node.seed, 1),
+      );
+    }
+
+    return node.rightChild;
+  }
+}
+
+function brownianBridgeValue(root, time, dimensions) {
+  let node = root;
+
+  for (let level = 0; level < bridgeLevels; level++) {
+    if (time === node.leftTime) return [...node.left];
+
+    if (time === node.rightTime) return [...node.right];
+
+    bridgeMidpoint(node, dimensions);
+
+    if (time === node.midpointTime) return [...node.midpoint];
+
+    node = getBridgeChild(node, time < node.midpointTime, dimensions);
   }
 
   // Final interpolation based on the distribution of the brownian bridge.
-  const alpha = (time - leftTime) / (rightTime - leftTime);
-  const b = rightTime - time;
-  const noise = normalRandomVector(splitSeed(nodeSeed, 2), dimensions);
-  const standardDeviation = Math.sqrt(b * alpha);
+  const alpha = (time - node.leftTime) / (node.rightTime - node.leftTime);
+  const noise = normalRandomVector(splitSeed(node.seed, 2), dimensions);
+  const standardDeviation = Math.sqrt((node.rightTime - time) * alpha);
 
-  return left.map(
+  return node.left.map(
     (value, i) =>
-      value +
-      alpha * (right[i] - value) +
-      standardDeviation * noise[i] -
-      time * endpoint[i],
+      value + alpha * (node.right[i] - value) + standardDeviation * noise[i],
   );
 }
 
 function brownianValue(particle, age) {
   const dimensions = particle.position.length;
-  const leftAge = Math.floor(age);
+  const rightAge = Math.ceil(age);
 
-  while (particle.integerValues.length <= leftAge + 1) {
+  while (particle.integerValues.length <= rightAge) {
     const k = particle.integerValues.length - 1;
     const intervalSeed = splitSeed(particle.motionSeed, k);
     const increment = normalRandomVector(
@@ -185,19 +231,34 @@ function brownianValue(particle, age) {
     );
   }
 
-  const left = particle.integerValues[leftAge];
-  if (leftAge === age) return [...left];
-  const right = particle.integerValues[leftAge + 1];
+  if (rightAge === age) return [...particle.integerValues[rightAge]];
 
-  const intervalSeed = splitSeed(particle.motionSeed, leftAge);
-  const bridgeSeed = splitSeed(intervalSeed, 1);
+  const leftAge = rightAge - 1;
+  const left = particle.integerValues[leftAge];
+  const right = particle.integerValues[rightAge];
+
+  let root = particle.roots[leftAge];
+
+  if (root === undefined) {
+    const intervalSeed = splitSeed(particle.motionSeed, leftAge);
+    const bridgeSeed = splitSeed(intervalSeed, 1);
+
+    root = createBridgeNode(
+      0,
+      1,
+      Array(dimensions).fill(0),
+      Array(dimensions).fill(0),
+      splitSeed(bridgeSeed, 0),
+    );
+
+    particle.roots[leftAge] = root;
+  }
 
   const unitAge = age - leftAge;
-
-  const unitAgeValue = brownianBridgeValue(bridgeSeed, unitAge, dimensions);
+  const bridgeValue = brownianBridgeValue(root, unitAge, dimensions);
 
   return left.map(
-    (value, i) => value + unitAge * (right[i] - value) + unitAgeValue[i],
+    (value, i) => value + unitAge * (right[i] - value) + bridgeValue[i],
   );
 }
 
@@ -213,7 +274,7 @@ function getParticlePosition(particle, time, diffusion, drift) {
 export function simulateBranchingProcess(payload) {
   const processType = payload.processType;
   const duration = Number(payload.duration);
-  const dt = Number(payload.dt);
+  const dt = processType === `rw` ? 1 : Number(payload.dt);
   const diffusion = payload.diffusion.map(Number);
   const drift = payload.drift.map(Number);
   const branchingRate = Number(payload.branchingRate);
