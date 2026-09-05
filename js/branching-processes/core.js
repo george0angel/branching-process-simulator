@@ -269,6 +269,13 @@ function getParticlePosition(particle, time, diffusion, drift) {
   );
 }
 
+let minPosition, maxPosition;
+
+function updateBounds(position) {
+  minPosition = minPosition.map((value, i) => Math.min(value, position[i]));
+  maxPosition = maxPosition.map((value, i) => Math.max(value, position[i]));
+}
+
 export function simulateBranchingProcess(payload) {
   const processType = payload.processType;
   const duration = Number(payload.duration);
@@ -285,6 +292,10 @@ export function simulateBranchingProcess(payload) {
 
   const binaryRandom = createBinaryRandom(splitSeed(seed, 0));
   const boundedRandom = createBoundedRandom(splitSeed(seed, 1));
+
+  let maximumGeneration = 1;
+  minPosition = [...startingPosition];
+  maxPosition = [...startingPosition];
 
   const particles = [];
   let activeIds = new Set();
@@ -329,6 +340,8 @@ export function simulateBranchingProcess(payload) {
         particle.position[boundedRandom(particle.position.length)] +=
           -1 + 2 * binaryRandom();
 
+        updateBounds(particle.position);
+
         particle.path.push([time, [...particle.position]]);
       }
     }
@@ -356,6 +369,8 @@ export function simulateBranchingProcess(payload) {
       parent.position = [...branchPosition];
 
       if (parent.path.at(-1)?.[0] !== branchTime) {
+        updateBounds(branchPosition);
+
         parent.path.push([branchTime, [...branchPosition]]);
       }
 
@@ -371,6 +386,8 @@ export function simulateBranchingProcess(payload) {
           branchingRate,
           processType,
         );
+
+        maximumGeneration = Math.max(maximumGeneration, child.generation + 1);
 
         particles.push(child);
         activeIds.add(childId);
@@ -393,29 +410,9 @@ export function simulateBranchingProcess(payload) {
           drift,
         );
 
+        updateBounds(particle.position);
+
         particle.path.push([time, [...particle.position]]);
-      }
-    }
-
-    let minPosition = Array(dimensions).fill(Infinity);
-    let maxPosition = Array(dimensions).fill(-Infinity);
-
-    for (const particleId of activeIds) {
-      const position = particles[particleId].position;
-
-      for (
-        let dimensionIndex = 0;
-        dimensionIndex < dimensions;
-        dimensionIndex++
-      ) {
-        minPosition[dimensionIndex] = Math.min(
-          minPosition[dimensionIndex],
-          position[dimensionIndex],
-        );
-        maxPosition[dimensionIndex] = Math.max(
-          maxPosition[dimensionIndex],
-          position[dimensionIndex],
-        );
       }
     }
   }
@@ -456,32 +453,6 @@ export function simulateBranchingProcess(payload) {
   const variance = sumOfSquares.map(
     (sumOfSquare) => sumOfSquare / activeIds.size,
   );
-
-  let maximumGeneration = 0;
-  let minPosition = Array(dimensions).fill(Infinity);
-  let maxPosition = Array(dimensions).fill(-Infinity);
-
-  for (const particle of particles) {
-    maximumGeneration = Math.max(maximumGeneration, particle.generation);
-
-    for (const [, position] of particle.path) {
-      for (
-        let dimensionIndex = 0;
-        dimensionIndex < dimensions;
-        dimensionIndex++
-      ) {
-        minPosition[dimensionIndex] = Math.min(
-          minPosition[dimensionIndex],
-          position[dimensionIndex],
-        );
-
-        maxPosition[dimensionIndex] = Math.max(
-          maxPosition[dimensionIndex],
-          position[dimensionIndex],
-        );
-      }
-    }
-  }
 
   return {
     parameters: {
