@@ -100,40 +100,63 @@ function runWorker(parameters) {
   });
 }
 
-function getFrameData(particle, graphMode, currentTime) {
-  const x = [];
-  const y = [];
-  const z = [];
+function setTraceTime(state, graphMode, currentTime) {
+  const EPSILON = 1e-12;
+  const path = state.particle.path;
 
-  for (const [time, position] of particle.path) {
-    const EPSILON = 1e-12;
-    if (time > currentTime + EPSILON) {
-      break;
-    }
+  while (
+    state.nextIndex < path.length &&
+    path[state.nextIndex][0] <= currentTime + EPSILON
+  ) {
+    const [time, position] = path[state.nextIndex];
 
+    // Add point.
     switch (graphMode) {
       case "xt":
-        x.push(time);
-        y.push(position[0]);
+        state.x.push(time);
+        state.y.push(position[0]);
         break;
+
       case "xy":
-        x.push(position[0]);
-        y.push(position[1]);
+        state.x.push(position[0]);
+        state.y.push(position[1]);
         break;
+
       case "xyt":
-        x.push(position[0]);
-        y.push(position[1]);
-        z.push(time);
+        state.x.push(position[0]);
+        state.y.push(position[1]);
+        state.z.push(time);
         break;
+
       case "xyz":
-        x.push(position[0]);
-        y.push(position[1]);
-        z.push(position[2]);
+        state.x.push(position[0]);
+        state.y.push(position[1]);
+        state.z.push(position[2]);
         break;
     }
+
+    state.nextIndex += 1;
   }
 
-  return graphMode === "xt" || graphMode === "xy" ? { x, y } : { x, y, z };
+  while (
+    state.nextIndex > 0 &&
+    path[state.nextIndex - 1][0] > currentTime + EPSILON
+  ) {
+    state.nextIndex -= 1;
+
+    // Remove point.
+    state.x.pop();
+    state.y.pop();
+    if (graphMode === "xyt" || graphMode === "xyz") {
+      state.z.pop();
+    }
+  }
+}
+
+function delay(time) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, time);
+  });
 }
 
 function drawAnimated(result, graphMode, animationDuration) {
@@ -148,20 +171,28 @@ function drawAnimated(result, graphMode, animationDuration) {
     (_, index) =>
       startTime + ((endTime - startTime) * index) / (frameCount - 1),
   );
+
   const traceIds = result.particles.map((_, index) => index);
-  const frames = times.map((time, index) => ({
-    name: `frame-${index}`,
-    traces: traceIds,
-    data: result.particles.map((particle) =>
-      getFrameData(particle, graphMode, time),
-    ),
+  const traceStates = result.particles.map((particle) => ({
+    particle: particle,
+    nextIndex: 0,
+    x: [],
+    y: [],
+    z: [],
   }));
 
+  // Set traces to last frame.
+  for (const state of traceStates) {
+    setTraceTime(state, graphMode, endTime);
+  }
+
   const is2D = graphMode === "xt" || graphMode === "xy";
-  const traces = frames[0].data.map((data) => ({
+  const traces = traceStates.map((state) => ({
     type: is2D ? "scattergl" : "scatter3d",
     mode: "lines",
-    ...data,
+    x: state.x,
+    y: state.y,
+    ...(is2D ? {} : { z: state.z }),
     line: {
       width: is2D ? 1 : 2,
     },
@@ -171,7 +202,7 @@ function drawAnimated(result, graphMode, animationDuration) {
   const minPosition = result.summary.minPosition;
   const maxPosition = result.summary.maxPosition;
   const range = minPosition.map((min, index) => [min, maxPosition[index]]);
-  const frameDuration = animationDuration / Math.max(frames.length - 1, 1);
+  const frameDuration = animationDuration / Math.max(times.length - 1, 1);
 
   const updatemenus = [
     {
@@ -194,22 +225,14 @@ function drawAnimated(result, graphMode, animationDuration) {
 
   const sliders = [
     {
-      active: frames.length - 1,
+      active: times.length - 1,
       y: -0.04,
       currentvalue: {
         prefix: "Time: ",
       },
-      steps: frames.map((frame, index) => ({
-        label: times[index].toFixed(2),
-        method: "animate",
-        args: [
-          [frame.name],
-          {
-            mode: "immediate",
-            frame: { duration: 0, redraw: true },
-            transition: { duration: 0 },
-          },
-        ],
+      steps: times.map((time) => ({
+        label: time.toFixed(2),
+        method: "skip",
       })),
     },
   ];
@@ -273,37 +296,46 @@ function drawAnimated(result, graphMode, animationDuration) {
   Plotly.newPlot("trajectory-plot", traces, layout, {
     responsive: true,
   });
-  Plotly.addFrames("trajectory-plot", frames);
-  Plotly.animate("trajectory-plot", [frames.at(-1).name], {
-    mode: "immediate",
-    frame: { duration: 0, redraw: true },
-    transition: { duration: 0 },
-  });
 
   const plot = document.getElementById("trajectory-plot");
   let isPlaying = false;
-  let currentFrame = frames.length - 1;
+  let currentFrame = times.length - 1;
 
-  plot.on("plotly_animatingframe", (event) => {
-    const index = Number(event.name.slice("frame-".length));
+  async function renderFrame(index, updateSlider = true) {
+    const currentTime = times[index];
+
+    for (const state of traceStates) {
+      setTraceTime(state, graphMode, currentTime);
+    }
+
+    const update = {
+      x: traceStates.map((state) => state.x),
+      y: traceStates.map((state) => state.y),
+    };
+
+    if (!is2D) update.z = traceStates.map((state) => state.z);
+
+    await Plotly.restyle(plot, update, traceIds);
+
     currentFrame = index;
 
-    if (plot.layout.sliders[0].active !== index) {
-      Plotly.relayout(plot, {
+    if (updateSlider && plot.layout.sliders[0].active !== index) {
+      await Plotly.relayout(plot, {
         "sliders[0].active": index,
       });
     }
-  });
+  }
 
-  plot.on("plotly_sliderchange", (event) => {
-    currentFrame = event.slider.active;
+  plot.on("plotly_sliderchange", async (event) => {
     if (isPlaying) {
       isPlaying = false;
 
-      Plotly.relayout(plot, {
+      await Plotly.relayout(plot, {
         "updatemenus[0].buttons[0].label": "&#9654;",
       });
     }
+
+    await renderFrame(event.slider.active, false);
   });
 
   plot.on("plotly_buttonclicked", async () => {
@@ -311,18 +343,7 @@ function drawAnimated(result, graphMode, animationDuration) {
       // Pause
       isPlaying = false;
 
-      Plotly.animate(plot, [null], {
-        mode: "immediate",
-        frame: {
-          duration: 0,
-          redraw: false,
-        },
-        transition: {
-          duration: 0,
-        },
-      });
-
-      Plotly.relayout(plot, {
+      await Plotly.relayout(plot, {
         "updatemenus[0].buttons[0].label": "&#9654;",
       });
 
@@ -330,52 +351,32 @@ function drawAnimated(result, graphMode, animationDuration) {
     }
 
     // Play
-    const atEnd = currentFrame === frames.length - 1;
+    if (currentFrame === times.length - 1) {
+      // At the end then restart from the beginning.
+      await renderFrame(0);
+    }
+
     isPlaying = true;
 
-    Plotly.relayout(plot, {
+    await Plotly.relayout(plot, {
       "updatemenus[0].buttons[0].label": "&#9208;",
     });
 
-    if (atEnd) {
-      // At the end then restart from the beginning.
-      try {
-        await Plotly.animate(
-          plot,
-          frames.map((frame) => frame.name),
-          {
-            mode: "immediate",
-            fromcurrent: false,
-            frame: {
-              duration: frameDuration,
-              redraw: true,
-            },
-            transition: {
-              duration: 0,
-            },
-          },
-        );
-      } catch {}
-    } else {
+    while (isPlaying && currentFrame < times.length - 1) {
       // Paused partly through then continue from current frame.
-      try {
-        await Plotly.animate(plot, null, {
-          mode: "immediate",
-          fromcurrent: true,
-          frame: {
-            duration: frameDuration,
-            redraw: true,
-          },
-          transition: {
-            duration: 0,
-          },
-        });
-      } catch {}
+      const start = performance.now();
+
+      await renderFrame(currentFrame + 1);
+
+      // Account for rendering time.
+      const elapsed = performance.now() - start;
+
+      await delay(Math.max(0, frameDuration - elapsed));
     }
 
     isPlaying = false;
 
-    Plotly.relayout(plot, {
+    await Plotly.relayout(plot, {
       "updatemenus[0].buttons[0].label": "&#9654;",
     });
   });
