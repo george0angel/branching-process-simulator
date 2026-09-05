@@ -125,60 +125,39 @@ function createParticle(
 
 const bridgeLevels = 14;
 
-function createBridgeNode(leftTime, rightTime, left, right, seed) {
+function createBridgeNode(seed) {
   return {
-    leftTime,
-    rightTime,
-    left,
-    right,
     seed,
-
-    midpointTime: null,
     midpoint: null,
-
     leftChild: null,
     rightChild: null,
   };
 }
 
-function bridgeMidpoint(node, dimensions) {
+function bridgeMidpoint(node, leftTime, rightTime, left, right, dimensions) {
   if (node.midpoint !== null) {
     return;
   }
 
-  node.midpointTime = (node.leftTime + node.rightTime) / 2;
-
   const noise = normalRandomVector(node.seed, dimensions);
 
-  const standardDeviation = Math.sqrt(node.rightTime - node.leftTime) / 2;
+  const standardDeviation = Math.sqrt(rightTime - leftTime) / 2;
 
-  node.midpoint = node.left.map(
-    (value, i) => (value + node.right[i]) / 2 + standardDeviation * noise[i],
+  node.midpoint = left.map(
+    (value, i) => (value + right[i]) / 2 + standardDeviation * noise[i],
   );
 }
 
 function getBridgeChild(node, goLeft) {
   if (goLeft) {
     if (node.leftChild === null) {
-      node.leftChild = createBridgeNode(
-        node.leftTime,
-        node.midpointTime,
-        node.left,
-        node.midpoint,
-        splitSeed(node.seed, 0),
-      );
+      node.leftChild = createBridgeNode(splitSeed(node.seed, 0));
     }
 
     return node.leftChild;
   } else {
     if (node.rightChild === null) {
-      node.rightChild = createBridgeNode(
-        node.midpointTime,
-        node.rightTime,
-        node.midpoint,
-        node.right,
-        splitSeed(node.seed, 1),
-      );
+      node.rightChild = createBridgeNode(splitSeed(node.seed, 1));
     }
 
     return node.rightChild;
@@ -188,26 +167,41 @@ function getBridgeChild(node, goLeft) {
 function brownianBridgeValue(root, time, dimensions) {
   let node = root;
 
-  for (let level = 0; level < bridgeLevels; level++) {
-    if (time === node.leftTime) return node.left;
+  let leftTime = 0;
+  let rightTime = 1;
 
-    if (time === node.rightTime) return node.right;
+  let left = Array(dimensions).fill(0);
+  let right = Array(dimensions).fill(0);
 
-    bridgeMidpoint(node, dimensions);
+  for (let level = 0; level < bridgeLevels; level += 1) {
+    if (time === leftTime) return left;
+    if (time === rightTime) return right;
 
-    if (time === node.midpointTime) return node.midpoint;
+    bridgeMidpoint(node, leftTime, rightTime, left, right, dimensions);
 
-    node = getBridgeChild(node, time < node.midpointTime);
+    const midpointTime = (leftTime + rightTime) / 2;
+
+    if (time === midpointTime) return node.midpoint;
+
+    if (time < midpointTime) {
+      rightTime = midpointTime;
+      right = node.midpoint;
+      node = getBridgeChild(node, true);
+    } else {
+      leftTime = midpointTime;
+      left = node.midpoint;
+      node = getBridgeChild(node, false);
+    }
   }
 
   // Final interpolation based on the distribution of the brownian bridge.
-  const alpha = (time - node.leftTime) / (node.rightTime - node.leftTime);
+  const alpha = (time - leftTime) / (rightTime - leftTime);
   const noise = normalRandomVector(splitSeed(node.seed, 2), dimensions);
-  const standardDeviation = Math.sqrt((node.rightTime - time) * alpha);
+  const standardDeviation = Math.sqrt((rightTime - time) * alpha);
 
-  return node.left.map(
+  return left.map(
     (value, i) =>
-      value + alpha * (node.right[i] - value) + standardDeviation * noise[i],
+      value + alpha * (right[i] - value) + standardDeviation * noise[i],
   );
 }
 
@@ -241,13 +235,7 @@ function brownianValue(particle, age) {
     const intervalSeed = splitSeed(particle.motionSeed, leftAge);
     const bridgeSeed = splitSeed(intervalSeed, 1);
 
-    root = createBridgeNode(
-      0,
-      1,
-      Array(dimensions).fill(0),
-      Array(dimensions).fill(0),
-      splitSeed(bridgeSeed, 0),
-    );
+    root = createBridgeNode(splitSeed(bridgeSeed, 0));
 
     particle.roots[leftAge] = root;
   }
