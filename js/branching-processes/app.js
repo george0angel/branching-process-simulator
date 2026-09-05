@@ -141,8 +141,8 @@ function drawAnimated(result, graphMode, animationDuration) {
     (20 * animationDuration) / 1000 + 1,
     result.summary.steps + 1,
   );
-  const startTime = result.populationHistory.at(0)[0];
-  const endTime = result.populationHistory.at(-1)[0];
+  const startTime = result.summary.startTime;
+  const endTime = result.summary.endTime;
   const times = Array.from(
     { length: frameCount },
     (_, index) =>

@@ -157,9 +157,7 @@ function bridgeMidpoint(node, dimensions) {
   );
 }
 
-function getBridgeChild(node, goLeft, dimensions) {
-  bridgeMidpoint(node, dimensions);
-
+function getBridgeChild(node, goLeft) {
   if (goLeft) {
     if (node.leftChild === null) {
       node.leftChild = createBridgeNode(
@@ -191,15 +189,15 @@ function brownianBridgeValue(root, time, dimensions) {
   let node = root;
 
   for (let level = 0; level < bridgeLevels; level++) {
-    if (time === node.leftTime) return [...node.left];
+    if (time === node.leftTime) return node.left;
 
-    if (time === node.rightTime) return [...node.right];
+    if (time === node.rightTime) return node.right;
 
     bridgeMidpoint(node, dimensions);
 
-    if (time === node.midpointTime) return [...node.midpoint];
+    if (time === node.midpointTime) return node.midpoint;
 
-    node = getBridgeChild(node, time < node.midpointTime, dimensions);
+    node = getBridgeChild(node, time < node.midpointTime);
   }
 
   // Final interpolation based on the distribution of the brownian bridge.
@@ -231,7 +229,7 @@ function brownianValue(particle, age) {
     );
   }
 
-  if (rightAge === age) return [...particle.integerValues[rightAge]];
+  if (rightAge === age) return particle.integerValues[rightAge];
 
   const leftAge = rightAge - 1;
   const left = particle.integerValues[leftAge];
@@ -318,9 +316,6 @@ export function simulateBranchingProcess(payload) {
       branchTime: particle.branchTime,
     });
   }
-
-  const populationHistory = [[0, activeIds.size]];
-  const frontierHistory = [[0, [...startingPosition], [...startingPosition]]];
 
   const steps = Math.floor(duration / dt);
 
@@ -423,9 +418,6 @@ export function simulateBranchingProcess(payload) {
         );
       }
     }
-
-    populationHistory.push([time, activeIds.size]);
-    frontierHistory.push([time, minPosition, maxPosition]);
   }
 
   let meanFinalPosition = Array(dimensions).fill(0);
@@ -512,10 +504,9 @@ export function simulateBranchingProcess(payload) {
       path: particle.path,
     })),
 
-    populationHistory,
-    frontierHistory,
-
     summary: {
+      startTime: 0,
+      endTime: steps * dt,
       finalPopulation: activeIds.size,
       totalParticlesCreated: particles.length,
       maximumGeneration,
